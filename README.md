@@ -4,7 +4,7 @@ generate artworks with neural style transfer
 ### demo
 
 ![](misc/demo.png)
-
+![](misc/demo2.png)
 ### install
 pip install .
 

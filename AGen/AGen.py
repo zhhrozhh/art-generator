@@ -91,6 +91,7 @@ def denoiser(X,method = 'gaussian'):
 
 def VGG19Gen(style,content,size = None,iter = 600,denoise = 'gaussian'):
     assert denoise in ['gaussian','nlmean','none']
+    tf.reset_default_graph()
     if size is None:
         W,H = Image.open(content).size
     else:
