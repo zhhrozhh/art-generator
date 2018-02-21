@@ -1,13 +1,18 @@
 from tf_tools import V19_CONV
-
+import gc
 import tensorflow as tf
 from PIL import Image
 import numpy as np
 import matplotlib.pyplot as plt
+import scipy.ndimage
+from dipy.denoise.nlmeans import nlmeans
+from dipy.denoise.noise_estimate import estimate_sigma
+
 
 class Style_Transfer(V19_CONV):
     def __init__(self,name,W,H,style_path,content_path):
         V19_CONV.__init__(self,name,W,H)
+
         self.W = W
         self.H = H
         self.style = np.asarray(Image.open(style_path).resize((W,H)))/256
@@ -71,10 +76,19 @@ class Style_Transfer(V19_CONV):
 
 
 
+def denoiser(X,method = 'gaussian'):
+    assert method in ['gaussian','nlmean','none']
+    s = estimate_sigma(X,N=4)
+    if method == 'gaussian':
+        return scipy.ndimage.filters.gaussian_filter(X,sigma = s[0])
+    if method == 'nlmean':
+        return nlmeans(X,s,patch_radius= 1, block_radius = 1, rician= True)
+    return X
 
 
 
-def VGG19Gen(style,content,size = None,iter = 600):
+def VGG19Gen(style,content,size = None,iter = 600,denoise = 'gaussian'):
+    assert denoise in ['gaussian','nlmean','none']
     if size is None:
         W,H = Image.open(content).size
     else:
@@ -82,7 +96,8 @@ def VGG19Gen(style,content,size = None,iter = 600):
     gen = Style_Transfer('test',W,H,style,content)
     AS1,AS2,AS3,AC1,AC2,AC3 = gen.getSC()
     with tf.Session() as sess:
-        x = q.content
+        sess.run(tf.global_variables_initializer())
+        x = gen.content
         fig = plt.figure()
         ax = fig.add_subplot(111)
         fig.show()
@@ -96,29 +111,35 @@ def VGG19Gen(style,content,size = None,iter = 600):
             gen.AC2:AC2,
             gen.AC3:AC3
         }
-        g = tf.gradients[gen.cost,[gen.X]]
-        lr = 0.5
+        grd = tf.gradients(gen.cost,[gen.X])
+        lr = 0.524
         m = np.zeros(x.shape)
         v = np.zeros(x.shape)
-        bate1 = 0.9
-        beta2 = 0.9999
+        beta1 = 0.9
+        beta2 = 0.999
         eps = 1e-8
         lri = lr
-        cost_a = np.inf
+        cost_a = 10000
         for i in range(1,iter+1):
+            gc.collect()
             dic[gen.X] = x
-            cost,dX = sess.run([q.cost,grd[0]],feed_dict = dic)
+            cost,dX = sess.run([gen.cost,grd[0]],feed_dict = dic)
             if cost > cost_a:
-                lr = lr*0.99
+                lr = lr*0.995
             cost_a = cost
             lri = lr*np.sqrt(1-beta2**i)/(1-beta1**i)
             m = beta1*m + (1-beta1)*dX
-            v = beta2*m + (1-beta2)*dX*dX
+            v = beta2*v + (1-beta2)*dX*dX
             me = m/(1-beta1**i)
             ve = v/(1-beta2**i)
             x = x - lri*me/(np.sqrt(ve)+eps)
+
+            x = denoiser(x,method = denoise)
+            sx = np.copy(x)            
             ax.clear()
-            ax.imshow(x[0,:,:,:])
+            sx[sx>1] = 1
+            sx[sx<0] = 0
+            ax.imshow(sx[0,:,:,:])
             ax.set_title(str(i)+'/'+str(iter)+' cost:'+str(cost))
             fig.canvas.draw()
     return x[0]
