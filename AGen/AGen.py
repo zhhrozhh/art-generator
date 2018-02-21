@@ -60,7 +60,7 @@ class Style_Transfer(V19_CONV):
         
         self.s_cost = 0.33*self.s_cost1+0.33*self.s_cost2+0.33*self.s_cost3
         
-        self.cost = 40*self.s_cost + 10*self.c_cost
+        self.cost = 40*self.s_cost + 16*self.c_cost
     def getSC(self):
                  
         with tf.Session() as sess:
@@ -77,13 +77,15 @@ class Style_Transfer(V19_CONV):
 
 
 def denoiser(X,method = 'gaussian'):
+    #ss = X.shape
+    X = X.reshape(X.shape[1:])
     assert method in ['gaussian','nlmean','none']
-    s = estimate_sigma(X,N=4)
+    s = X.std()
     if method == 'gaussian':
-        return scipy.ndimage.filters.gaussian_filter(X,sigma = s[0])
+        return scipy.ndimage.filters.gaussian_filter(X,sigma = s).reshape(1,*X.shape)
     if method == 'nlmean':
-        return nlmeans(X,s,patch_radius= 1, block_radius = 1, rician= True)
-    return X
+        return nlmeans(X,sigma = s/10,block_radius = 1).reshape(1,*X.shape)
+    return X.reshape(1,*X.shape)
 
 
 
@@ -95,6 +97,7 @@ def VGG19Gen(style,content,size = None,iter = 600,denoise = 'gaussian'):
         W,H = size
     gen = Style_Transfer('test',W,H,style,content)
     AS1,AS2,AS3,AC1,AC2,AC3 = gen.getSC()
+    sx = None
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
         x = gen.content
@@ -139,7 +142,8 @@ def VGG19Gen(style,content,size = None,iter = 600,denoise = 'gaussian'):
             ax.clear()
             sx[sx>1] = 1
             sx[sx<0] = 0
+            #print(sx.shape)
             ax.imshow(sx[0,:,:,:])
             ax.set_title(str(i)+'/'+str(iter)+' cost:'+str(cost))
             fig.canvas.draw()
-    return x[0]
+    return sx[0]
